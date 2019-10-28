@@ -12,16 +12,44 @@ import java.util.*;
 public class Main {
     private static final String mscMetro = "D:\\SkillBox Java\\Модуль 9\\WikiParser\\data\\MscMetro.json";
     private static JSONObject mainObject = new JSONObject();
-    private static JSONObject stationsObject = new JSONObject();
-    private static JSONArray stationsInLineArray = new JSONArray();
+    private static TreeSet<JSONObject> linesArray = new TreeSet<>(new Comparator<JSONObject>() {
+        @Override
+        public int compare(JSONObject o1, JSONObject o2) {
+            if (o1.get("number").toString().matches(".*\\D+") || o2.get("number").toString().matches(".*\\D+")) {
+                Float f1 = Float.parseFloat(o1.get("number").toString().replaceAll("\\D+", "\\.5"));
+                Float f2 = Float.parseFloat(o2.get("number").toString().replaceAll("\\D+", "\\.5"));
+                return f1.compareTo(f2);
+            }
+            else {
+                Integer i1 = Integer.parseInt(o1.get("number").toString());
+                Integer i2 = Integer.parseInt(o2.get("number").toString());
+                return i1.compareTo(i2);
+            }
+        }
+    });
 
     private static JSONObject connectionsObject = new JSONObject();
     private static JSONArray connectionsArray = new JSONArray();
 
-    private static JSONArray linesArray = new JSONArray();
     private static JSONObject linesObject = new JSONObject();
 
     private static String prevLineNumber;
+    private static TreeMap<String, List> lineNum2statName = new TreeMap<>(new Comparator<String>() {
+        @Override
+        public int compare(String o1, String o2) {
+            if (o1.matches(".*\\D+") || o2.matches(".*\\D+")) {
+                Float f1 = Float.parseFloat(o1.replaceAll("\\D+", "\\.5"));
+                Float f2 = Float.parseFloat(o2.replaceAll("\\D+", "\\.5"));
+                return f1.compareTo(f2);
+            }
+            else {
+                Integer i1 = Integer.parseInt(o1);
+                Integer i2 = Integer.parseInt(o2);
+                return i1.compareTo(i2);
+            }
+        }
+    });
+    private static List<String> stInLine = new ArrayList<>();
 
     public static void main(String[] args) {
         try {
@@ -32,6 +60,7 @@ public class Main {
                 Elements tableRows = t.getElementsByTag("tr");
                 tableRows.forEach(tr -> {
                     if (tr.child(0).select("span[class]").hasClass("sortkey")){
+                        //Сонцевская+Большая колевая линия
                         if (tr.child(0).select("td[data-sort-value]").attr("data-sort-value").equals("8.9")){
                             String lineNumber = tr.child(0).select("span.sortkey").first().text();
                             parseLines(tr, lineNumber);
@@ -40,6 +69,7 @@ public class Main {
                             parseLines(tr, lineNumber);
                             parseStations(tr, lineNumber);
                         }
+                        //все остальные линии
                         else {
                             String lineNumber = tr.child(0).select("span.sortkey").first().text();
                             parseLines(tr, lineNumber);
@@ -49,8 +79,7 @@ public class Main {
 
                 });
             });
-            fillMainObject(linesArray, stationsObject);
-
+            fillMainObject();
             FileWriter writer = new FileWriter("data\\MscMetro.json");
             writer.write(mainObject.toJSONString());
             writer.flush();
@@ -61,39 +90,26 @@ public class Main {
     }
 
     private static void parseLines (Element tr, String lineNumber){
-        linesObject.put("number", lineNumber);
-        linesObject.put("name", tr.child(0).select("span").attr("title").replaceAll("\\sлиния", ""));
-        linesObject.put("color", tr.child(0).select("td[style]").attr("style").replaceAll("background:", ""));
-        if (!linesArray.contains(linesObject) && !linesObject.containsValue("")){
-            linesArray.add(new JSONObject(linesObject));
+        if (!linesObject.containsValue(lineNumber)) {
+            linesObject.put("number", lineNumber);
+            linesObject.put("name", tr.child(0).select("span").attr("title").replaceAll("\\sлиния", ""));
+            linesObject.put("color", tr.child(0).select("td[style]").attr("style").replaceAll("background:", ""));
+            if (!linesArray.contains(linesObject) && !linesObject.get("name").toString().equals("")) {
+                linesArray.add(new JSONObject(linesObject));
+            }
         }
     }
 
     private static void parseStations (Element tr, String lineNumber){
         try {
-            if (stationsObject.isEmpty()){
-                stationsObject.put(lineNumber, new JSONArray());
+            List<String> stationsList = new ArrayList<>();
+            if (lineNum2statName.containsKey(lineNumber)) {
+                stationsList = lineNum2statName.get(lineNumber);
             }
-            if (stationsObject.containsKey(lineNumber)) {
-                stationsInLineArray.add(tr.child(1).select("a[title~=станция]").text());
-                prevLineNumber = lineNumber;
-            }
-            else {
-                //Скидываем полученные станции на линии в stationsObject
-                JSONArray arrayToPutInObject = new JSONArray();
-                for (Object object : stationsInLineArray){
-                    arrayToPutInObject.add(object);
-                }
-                stationsObject.put(prevLineNumber, arrayToPutInObject);
+            stationsList.add(tr.child(1).select("a[title~=станция]").text());
+            lineNum2statName.put(lineNumber, stationsList);
 
-                //Записываем первую стацию новой линии
-                stationsInLineArray.clear();
-                stationsInLineArray.add(tr.child(1).select("a[title~=станция]").text());
-                stationsObject.put(lineNumber, new JSONArray());
-            }
         } catch (IndexOutOfBoundsException e){
-            System.out.println(lineNumber);
-            e.printStackTrace();
         }
     }
 
@@ -101,26 +117,8 @@ public class Main {
 
     }
 
-    private static void fillMainObject (JSONArray linesArray, JSONObject stationsObject){
-        Collections.sort(linesArray, (Comparator<JSONObject>) (o1, o2) -> o1.get("number").toString().compareTo(o2.get("number").toString()));
+    private static void fillMainObject (){
         mainObject.put("lines", linesArray);
-
-        TreeMap<String, Object> lineNum2statName = new TreeMap<>(new Comparator<String>() {
-            @Override
-            public int compare(String o1, String o2) {
-                if (o1.matches(".*\\D+") || o2.matches(".*\\D+")) {
-                    Float f1 = Float.parseFloat(o1.replaceAll("\\D+", "\\.5"));
-                    Float f2 = Float.parseFloat(o2.replaceAll("\\D+", "\\.5"));
-                    return f1.compareTo(f2);
-                }
-                else {
-                    Integer i1 = Integer.parseInt(o1);
-                    Integer i2 = Integer.parseInt(o2);
-                    return i1.compareTo(i2);
-                }
-            }
-        });
-        stationsObject.keySet().forEach(e -> lineNum2statName.put(e.toString(), stationsObject.get(e)));
         mainObject.put("stations", lineNum2statName);
     }
 }
