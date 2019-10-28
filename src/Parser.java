@@ -111,9 +111,12 @@ public class Parser {
         if (lineNum2statName.containsKey(lineNumber)) {
             stationsList = lineNum2statName.get(lineNumber);
         }
-        stationsList.add(tr.select("a[title~=\\(станция]").text());
+        if (!tr.select("a[title~=\\(станция]").text().equals("")) {
+            stationsList.add(tr.select("a[title~=\\(станция]").text());
+        }
         lineNum2statName.put(lineNumber, stationsList);
         mainObject.put("stations", lineNum2statName);
+
     }
 
     private static void parseConnections (Element tr, String originLine) {
@@ -121,44 +124,46 @@ public class Parser {
             String lineTo = tr.child(3).text();
             String stationTo;
 
-            connectedStationObject.put("line", originLine);
-            connectedStationObject.put("station", tr.select("a[title~=\\(станция]").text());
+            if (!tr.select("a[title~=\\(станция]").text().equals("")) {
+                connectedStationObject.put("line", originLine);
+                connectedStationObject.put("station", tr.select("a[title~=\\(станция]").text());
 
-            if (!isConnectionAlreadyExist(connectedStationObject)) {
-                connectedStationsArray.add(new JSONObject(connectedStationObject));
+                if (!isConnectionAlreadyExist(connectedStationObject)) {
+                    connectedStationsArray.add(new JSONObject(connectedStationObject));
 
-                //Переход на несколько линий
-                if (lineTo.contains(" ")) {
-                    String[] linesTo = lineTo.split("\\s");
+                    //Переход на несколько линий
+                    if (lineTo.contains(" ")) {
+                        String[] linesTo = lineTo.split("\\s");
 
-                    List<String> stationsTo = new ArrayList<>();
-                    Elements stationTo_links = tr.select("span[title~=Переход]").select("a[href]");
+                        List<String> stationsTo = new ArrayList<>();
+                        Elements stationTo_links = tr.select("span[title~=Переход]").select("a[href]");
 
-                    //Получить все станции на пересадку
-                    for (Element link : stationTo_links) {
-                        String stationTo_link = link.absUrl("href");
-                        stationsTo.add(Jsoup.connect(stationTo_link).get().getElementById("firstHeading").text().replaceAll("\\s\\(.*\\)", ""));
+                        //Получить все станции на пересадку
+                        for (Element link : stationTo_links) {
+                            String stationTo_link = link.absUrl("href");
+                            stationsTo.add(Jsoup.connect(stationTo_link).get().getElementById("firstHeading").text().replaceAll("\\s\\(.*\\)", ""));
+                        }
+
+                        //Заполнить массив пересадочными станциями
+                        for (int i = 0; i < linesTo.length; i++) {
+                            connectedStationObject.put("line", linesTo[i]);
+                            connectedStationObject.put("station", stationsTo.get(i));
+                            connectedStationsArray.add(new JSONObject(connectedStationObject));
+                        }
                     }
 
-                    //Заполнить массив пересадочными станциями
-                    for (int i = 0; i < linesTo.length; i++) {
-                        connectedStationObject.put("line", linesTo[i]);
-                        connectedStationObject.put("station", stationsTo.get(i));
+                    //Переход на одну линию
+                    else {
+                        String stationTo_link = tr.select("span[title~=Переход]").select("a[href]").first().absUrl("href");
+                        stationTo = Jsoup.connect(stationTo_link).get().getElementById("firstHeading").text().replaceAll("\\s\\(.*\\)", "");
+                        connectedStationObject.put("line", lineTo);
+                        connectedStationObject.put("station", stationTo);
                         connectedStationsArray.add(new JSONObject(connectedStationObject));
                     }
+                    allConnectionsArray.add(connectedStationsArray.clone());
+                    mainObject.put("connections", allConnectionsArray);
+                    connectedStationsArray.clear();
                 }
-
-                //Переход на одну линию
-                else {
-                    String stationTo_link = tr.select("span[title~=Переход]").select("a[href]").first().absUrl("href");
-                    stationTo = Jsoup.connect(stationTo_link).get().getElementById("firstHeading").text().replaceAll("\\s\\(.*\\)", "");
-                    connectedStationObject.put("line", lineTo);
-                    connectedStationObject.put("station", stationTo);
-                    connectedStationsArray.add(new JSONObject(connectedStationObject));
-                }
-                allConnectionsArray.add(connectedStationsArray.clone());
-                mainObject.put("connections", allConnectionsArray);
-                connectedStationsArray.clear();
             }
         }catch (IOException e){
             e.printStackTrace();
